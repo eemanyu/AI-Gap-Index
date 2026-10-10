@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Run editorial data tests
+        run: bun test
+      - name: Build server bundle
+        run: bun build server.ts --target=bun --outfile=/tmp/gap-index-server.js
+      - name: HTTP smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=3199 SITE_URL=http://127.0.0.1:3199 DB_PATH=/tmp/gap-index-ci.sqlite bun run start >/tmp/gap-index-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3199/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3199/healthz | grep -q '"ok": true'
+          curl --fail --silent http://127.0.0.1:3199/ | grep -q 'The AI subscription arms race'
+          curl --fail --silent http://127.0.0.1:3199/api/index.json | grep -q '"score": 52'
+          curl --fail --silent http://127.0.0.1:3199/api/history.json | grep -q '2025-12'
+          curl --fail --silent http://127.0.0.1:3199/history/2025-12/ | grep -q 'Claude Code momentum'
+          curl --fail --silent http://127.0.0.1:3199/llms.txt | grep -q '/history/2026-10/'
+          curl --fail --silent http://127.0.0.1:3199/sitemap.xml | grep -q '/history/2025-12/'
+          curl --fail --silent http://127.0.0.1:3199/api/news.json | grep -q 'items'
+          echo 'HTTP smoke tests passed'
