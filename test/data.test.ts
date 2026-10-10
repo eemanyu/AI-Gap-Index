@@ -30,7 +30,7 @@ describe("GAP Index editorial data", () => {
   test("current reading points to the final month and describes the direction honestly", () => {
     expect(currentScore).toBe(history.at(-1)?.score);
     expect(methodology.direction).toContain("50 = parity");
-    expect(methodology.caveat).toContain("not a representative sentiment poll");
+    expect(methodology.caveat).toContain("Not a representative sentiment poll");
   });
 
   test("citation coverage only describes link coverage", () => {
