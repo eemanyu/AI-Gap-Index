@@ -42,4 +42,8 @@ jobs:
           curl --fail --silent http://127.0.0.1:3199/llms.txt | grep -q '/history/2026-10/'
           curl --fail --silent http://127.0.0.1:3199/sitemap.xml | grep -q '/history/2025-12/'
           curl --fail --silent http://127.0.0.1:3199/api/news.json | grep -q 'items'
+          curl --fail --silent http://127.0.0.1:3199/privacy/ | grep -q 'Privacy policy.'
+          curl --fail --silent http://127.0.0.1:3199/unsubscribe/ | grep -q 'Less mail. Your call.'
+          curl --fail --silent -X POST http://127.0.0.1:3199/api/subscribe -H 'content-type: application/json' -d '{"email":"ci@example.test","consent":true}' | grep -q '"ok": true'
+          curl --fail --silent -X POST http://127.0.0.1:3199/api/unsubscribe -H 'content-type: application/json' -d '{"email":"ci@example.test"}' | grep -q '"ok": true'
           echo 'HTTP smoke tests passed'
