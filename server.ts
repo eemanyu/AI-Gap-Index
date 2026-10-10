@@ -272,6 +272,47 @@ async function subscribe(request: Request): Promise<Response> {
   }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
 }
 
+async function unsubscribe(request: Request): Promise<Response> {
+  if (rateLimit(request)) return json({ ok: false, message: "Too many attempts. Please try again in a few minutes." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 429);
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > 8192) return json({ ok: false, message: "Request is too large." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 413);
+  let body: { email?: string; company?: string };
+  try {
+    body = await request.json() as typeof body;
+  } catch {
+    return json({ ok: false, message: "Please enter the email address used to subscribe." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 400);
+  }
+  if (body.company) return json({ ok: true, message: "If the address was subscribed, it has been removed." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  const email = String(body.email ?? "").trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return json({ ok: false, message: "Enter a valid email address." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 400);
+  }
+
+  if (RESEND_API_KEY && RESEND_AUDIENCE_ID) {
+    try {
+      const response = await fetch("https://api.resend.com/audiences/" + encodeURIComponent(RESEND_AUDIENCE_ID) + "/contacts/" + encodeURIComponent(email), {
+        method: "PATCH",
+        headers: { authorization: "Bearer " + RESEND_API_KEY, "content-type": "application/json" },
+        body: JSON.stringify({ unsubscribed: true }),
+        signal: AbortSignal.timeout(4500)
+      });
+      if (!response.ok && response.status !== 404) {
+        return json({ ok: false, message: "The mailing provider could not update this subscription. Please retry shortly." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 502);
+      }
+    } catch {
+      return json({ ok: false, message: "The mailing provider is temporarily unavailable. Please retry shortly." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 502);
+    }
+  }
+
+  db.query("DELETE FROM subscribers WHERE email = ?").run(email);
+  return json({
+    ok: true,
+    message: RESEND_API_KEY && RESEND_AUDIENCE_ID
+      ? "Your address has been unsubscribed from future Resend broadcasts and removed from the local list."
+      : "Your address has been removed from the local list. Email delivery is not active unless the site owner configures a mailing provider."
+  }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+}
+
 console.info(`GAP Index server starting on :${PORT}`);
 void refreshNews();
 
@@ -387,11 +428,12 @@ Bun.serve({
       }
     }
 
+    if (request.method === "POST" && pathname === "/api/unsubscribe") return unsubscribe(request);
     if (request.method === "POST" && pathname === "/api/subscribe") return subscribe(request);
 
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
 
-    const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const relativePath = pathname === "/" ? "index.html" : pathname.endsWith("/") ? pathname.slice(1) + "index.html" : pathname.replace(/^\/+/, "");
     const filepath = resolve(PUBLIC_DIR, relativePath);
     if (!filepath.startsWith(PUBLIC_DIR + "/") && filepath !== resolve(PUBLIC_DIR, "index.html")) return notFound();
     const file = Bun.file(filepath);
