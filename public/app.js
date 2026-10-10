@@ -263,6 +263,39 @@
     });
   }
 
+  const unsubscribeForm = $("#unsubscribe-form");
+  if (unsubscribeForm) {
+    unsubscribeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const emailInput = $("#unsubscribe-email");
+      const honeypot = $('input[name="company"]', unsubscribeForm);
+      const submit = $("#unsubscribe-submit");
+      const message = $("#unsubscribe-message");
+      if (!(emailInput instanceof HTMLInputElement) || !(honeypot instanceof HTMLInputElement) || !submit || !message) return;
+      submit.disabled = true;
+      submit.textContent = "Submitting…";
+      message.classList.remove("is-success", "is-error");
+      message.textContent = "Updating your subscription…";
+      try {
+        const response = await fetch("/api/unsubscribe", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ email: emailInput.value.trim(), company: honeypot.value })
+        });
+        const result = await response.json();
+        message.textContent = result.message || (result.ok ? "The request was received." : "Unable to update this subscription.");
+        message.classList.add(result.ok ? "is-success" : "is-error");
+        if (result.ok) emailInput.value = "";
+      } catch {
+        message.textContent = "The subscription service is unavailable right now. Please try again later.";
+        message.classList.add("is-error");
+      } finally {
+        submit.disabled = false;
+        submit.innerHTML = 'Unsubscribe <span aria-hidden="true">↗</span>';
+      }
+    });
+  }
+
   const footerYear = $("#footer-year");
   if (footerYear) footerYear.textContent = String(new Date().getFullYear());
 
