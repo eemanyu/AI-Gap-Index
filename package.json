@@ -1,0 +1,14 @@
+{
+  "name": "anthropic-vs-openai-gap-index",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch server.ts",
+    "start": "bun server.ts",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}
