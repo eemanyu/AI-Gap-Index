@@ -23,17 +23,21 @@ Open http://localhost:3000.
 bun run start
 ```
 
-Set `SITE_URL` to the canonical public URL. The process serves the static-first site and JSON/Markdown endpoints. SQLite stores newsletter signups in `data/gap-index.sqlite`; use a persistent volume in production. Without a configured mailing provider, addresses are stored locally only and no newsletter email is sent. See `.env.example`.
+Set `SITE_URL` to the canonical public URL. The process serves the static-first site and JSON/Markdown endpoints. SQLite stores newsletter signups in `data/gap-index.sqlite`; use a persistent volume in production. Without a configured mailing provider, addresses are stored locally only and no newsletter email is sent. The UI explains this and includes a working unsubscribe route. Read `/privacy/` and see `.env.example`.
 
 ## SEO and agent endpoints
 - `/` — server-rendered homepage
 - `/api/index.json` — current reading, methodology, and source-linked history
+- `/history/YYYY-MM/` — permanent server-rendered monthly archive pages with Article schema and cited sources
 - `/api/history.json` — monthly history
 - `/api/news.json` — recent AI headlines (cached RSS refresh with curated fallback)
 - `/api/overview.md` — concise Markdown summary
 - `/llms.txt` — agent-facing site map and usage notes
 - `/llms-full.txt` — expanded methodology and history
-- `/robots.txt` and `/sitemap.xml` — generated from `SITE_URL`
+- `/robots.txt` and `/sitemap.xml` — generated from `SITE_URL`, including monthly archives
+- `/privacy/` — newsletter data handling and retention policy
+- `/unsubscribe/` and `POST /api/unsubscribe` — remove local signup and mark Resend contact unsubscribed when configured
+- `.github/workflows/ci.yml` — data tests, Bun build, and HTTP smoke tests
 
 ## Methodology
 Editorial baseline weights: subscription/value (30%), model capability (30%), coding and agent workflows (25%), and ecosystem/distribution (15%). Monthly values are informed by dated product launches, plan/usage changes, partnerships and credible industry reporting. They are interpretive, directional snapshots—not the output of a representative survey. Every scoring change should be accompanied by a short explanation and citations.
