@@ -440,3 +440,9 @@ button { color: inherit; }
   .archive-score strong { font-size: 41px; }
   .archive-nav { font-size: 10px; }
 }
+
+.unsubscribe-form { max-width: 560px; margin-top: 28px; }
+.unsubscribe-form > label:first-child { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 750; }
+.unsubscribe-form .email-field { background: #20221c; }
+.unsubscribe-form .email-field input { color: #f4f3ee; }
+.consent-label a { color: #d6fa8b; text-underline-offset: 3px; }
