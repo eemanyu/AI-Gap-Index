@@ -132,6 +132,24 @@ export type NewsItem = {
 
 export const fallbackNews: NewsItem[] = [
   {
+    id: "openai-safety-researchers",
+    title: "OpenAI dismisses three researchers after internal policy investigation",
+    publisher: "Reuters",
+    publishedAt: "2026-10-09",
+    url: "https://www.reuters.com/business/openai-says-it-has-fired-three-researchers-violating-sensitive-information-2026-10-09/",
+    category: "People & Safety",
+    summary: "The company and the dismissed researchers offered differing accounts of the dispute, renewing scrutiny of safety culture and internal governance."
+  },
+  {
+    id: "openai-investor-revenue",
+    title: "OpenAI's annualized revenue figure draws renewed scrutiny",
+    publisher: "Reuters",
+    publishedAt: "2026-10-08",
+    url: "https://www.reuters.com/business/openais-annualized-revenue-20-billion-less-than-previously-signaled-ft-reports-2026-10-08/",
+    category: "Business",
+    summary: "A report highlighted differences in how OpenAI and Anthropic count revenue routed through cloud partners, complicating direct comparisons."
+  },
+  {
     id: "openai-gpt-6-ui",
     title: "GPT-6 and Intelligent UI for everyone",
     publisher: "OpenAI",
@@ -150,15 +168,6 @@ export const fallbackNews: NewsItem[] = [
     summary: "Anthropic positioned its newest small model for fast, cost-sensitive, high-volume work."
   },
   {
-    id: "openai-investor-revenue",
-    title: "OpenAI's annualized revenue figure draws renewed scrutiny",
-    publisher: "Reuters",
-    publishedAt: "2026-10-08",
-    url: "https://www.reuters.com/business/openais-annualized-revenue-20-billion-less-than-previously-signaled-ft-reports-2026-10-08/",
-    category: "Business",
-    summary: "A report highlighted differences in how OpenAI and Anthropic count revenue routed through cloud partners, complicating direct comparisons."
-  },
-  {
     id: "anthropic-cyber-program",
     title: "Anthropic expands its Cyber Verification Program",
     publisher: "Anthropic",
@@ -166,15 +175,6 @@ export const fallbackNews: NewsItem[] = [
     url: "https://www.anthropic.com/news",
     category: "Safety",
     summary: "Anthropic expanded a program for qualifying security professionals working with advanced cyber capabilities."
-  },
-  {
-    id: "openai-safety-researchers",
-    title: "OpenAI dismisses three researchers after internal policy investigation",
-    publisher: "Reuters",
-    publishedAt: "2026-10-09",
-    url: "https://www.reuters.com/business/openai-says-it-has-fired-three-researchers-violating-sensitive-information-2026-10-09/",
-    category: "People & Safety",
-    summary: "The company and the dismissed researchers offered differing accounts of the dispute, renewing scrutiny of safety culture and internal governance."
   }
 ];
 
