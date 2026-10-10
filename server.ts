@@ -189,11 +189,14 @@ GAP Index scores are directional editorial assessments, not a representative pol
 - [Full overview](${origin}/llms-full.txt): expanded notes and all monthly summaries.
 - [Markdown overview](${origin}/api/overview.md): plain-text summary of the index.
 
+## Monthly archive
+${history.map((point) => `- [${point.label} editorial score (${point.score}/100)](${origin}/history/${point.month}/) — ${point.phase}`).join("\n")}
+
 ## Recommended agent usage
 1. Read the index direction and caveat before summarizing the score.
 2. Use the linked primary sources for factual claims.
 3. Never describe the editorial score as direct audience sentiment, live subscription pricing, or market share.
-4. For plan comparisons, verify current pricing and terms directly with [OpenAI](https://openai.com/) and [Anthropic](https://www.anthropic.com/).
+4. For plan comparisons, verify current pricing and terms directly with [OpenAI](https://openai.com/chatgpt/pricing) and [Anthropic](https://claude.com/pricing).
 `;
 }
 
@@ -294,7 +297,7 @@ Bun.serve({
             updatedAt: "2026-10-09",
             scoreDirection: methodology.direction,
             methodology,
-            history,
+            history: history.map((point) => ({ ...point, url: `${origin}/history/${point.month}/` })),
             newsUrl: `${origin}/api/news.json`,
             caveat: methodology.caveat
           };
@@ -325,7 +328,8 @@ Bun.serve({
     }
 
     if (request.method === "GET" && pathname === "/sitemap.xml") {
-      const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${xmlEscape(origin + "/")}</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n  <url><loc>${xmlEscape(origin + "/#history")}</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>\n  <url><loc>${xmlEscape(origin + "/#methodology")}</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>\n</urlset>`;
+      const archiveUrls = history.map((point) => `  <url><loc>${xmlEscape(origin + "/history/" + point.month + "/")}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`).join("\n");
+      const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${xmlEscape(origin + "/")}</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n${archiveUrls}\n</urlset>`;
       return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
 
