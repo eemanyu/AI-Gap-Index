@@ -333,6 +333,60 @@ Bun.serve({
       return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
 
+    if (request.method === "GET" || request.method === "HEAD") {
+      const match = pathname.match(/^\/history\/(\d{4}-\d{2})\/?$/);
+      if (match) {
+        const point = history.find((item) => item.month === match[1]);
+        if (!point) return notFound();
+        const scoreLabel = point.score > 50 ? "Relative Anthropic edge" : point.score < 50 ? "Relative OpenAI edge" : "Editorial parity";
+        const archiveUrl = origin + "/history/" + point.month + "/";
+        const pointIndex = history.findIndex((item) => item.month === point.month);
+        const previous = history[pointIndex - 1];
+        const next = history[pointIndex + 1];
+        const sources = point.sources.map((source) => '<li><a href="' + htmlEscape(source.url) + '" rel="noopener noreferrer">' + htmlEscape(source.title) + '</a><span>' + htmlEscape(source.publisher) + ' · ' + htmlEscape(source.date) + '</span></li>').join("");
+        const nav = (previous ? '<a href="' + origin + '/history/' + previous.month + '/" rel="prev">← ' + htmlEscape(previous.label) + '</a>' : '<span></span>') +
+          (next ? '<a href="' + origin + '/history/' + next.month + '/" rel="next">' + htmlEscape(next.label) + ' →</a>' : '<a href="' + origin + '/" rel="up">Current index →</a>');
+        const structured = JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: point.label + " GAP Index — Anthropic vs OpenAI",
+          datePublished: point.month + "-01",
+          dateModified: point.sources[point.sources.length - 1]?.date || point.month + "-01",
+          mainEntityOfPage: archiveUrl,
+          description: point.summary,
+          author: { "@type": "Organization", name: "GAP Index" },
+          publisher: { "@type": "Organization", name: "GAP Index" },
+          citation: point.sources.map((source) => source.url),
+          about: ["Anthropic", "OpenAI", "Claude subscription value", "ChatGPT ecosystem"],
+          isAccessibleForFree: true
+        }).replaceAll("<", "\\u003c");
+        const parts = [
+          '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
+          '<title>' + htmlEscape(point.label) + ' GAP Index — Anthropic vs OpenAI | GAP Index</title>',
+          '<meta name="description" content="' + htmlEscape(point.summary.slice(0, 155)) + '">',
+          '<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">',
+          '<link rel="canonical" href="' + htmlEscape(archiveUrl) + '"><link rel="stylesheet" href="/styles.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml">',
+          '<meta property="og:type" content="article"><meta property="og:title" content="' + htmlEscape(point.label) + ' GAP Index — Anthropic vs OpenAI">',
+          '<meta property="og:description" content="' + htmlEscape(point.summary.slice(0, 180)) + '"><meta property="og:url" content="' + htmlEscape(archiveUrl) + '">',
+          '<meta property="og:image" content="' + htmlEscape(origin + "/og-card.svg") + '"><script type="application/ld+json">' + structured + '</script></head><body>',
+          '<div class="site-shell"><header class="site-header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span class="brand-name">GAP<span>/</span>INDEX</span></a>',
+          '<nav class="primary-nav" aria-label="Main navigation"><a href="/">Current index</a><a href="/#history">History</a><a href="/#methodology">Methodology</a></nav><a class="header-cta" href="/#newsletter">Get the brief ↗</a></header>',
+          '<main class="archive-body"><a class="archive-back" href="/">← Current Anthropic vs OpenAI GAP Index</a>',
+          '<div class="archive-label">Monthly editorial archive · ' + htmlEscape(point.label) + '</div><h1>' + htmlEscape(point.phase) + '</h1>',
+          '<p class="archive-subtitle">' + htmlEscape(point.summary) + '</p>',
+          '<div class="archive-score"><strong>' + point.score + '<small>/100</small></strong><span><b>' + htmlEscape(scoreLabel) + '</b><br>Editorial score for ' + htmlEscape(point.label) + '<br>50 = parity · Not a representative poll</span></div>',
+          '<section class="archive-panel"><h2>What changed in ' + htmlEscape(point.label) + '?</h2><p>' + htmlEscape(point.summary) + '</p></section>',
+          '<h2>Anthropic / Claude signal</h2><div class="archive-signal"><h3>Product and ecosystem evidence</h3><p>' + htmlEscape(point.anthropicSignal) + '</p></div>',
+          '<h2>OpenAI / ChatGPT counterweight</h2><div class="archive-signal"><h3>Comparative context</h3><p>' + htmlEscape(point.openaiSignal) + '</p></div>',
+          '<h2>Primary sources and further reading</h2><ul class="archive-sources">' + sources + '</ul>',
+          '<h2>How to interpret this score</h2><p class="archive-subtitle">The GAP Index is a directional editorial assessment based on subscription value and usage limits (30%), model capability and reliability (30%), coding and agent workflows (25%), and ecosystem and distribution (15%). A reading above 50 tilts toward Anthropic; below 50 tilts toward OpenAI. The series is a retrospective reconstruction, not a representative audience sentiment poll, audited market-share metric, or guarantee of subscription value. See the <a href="/#methodology">full methodology</a>.</p>',
+          '<nav class="archive-nav" aria-label="Monthly archive navigation">' + nav + '</nav></main>',
+          '<footer class="site-footer"><div class="footer-bottom"><span>GAP Index · Independent editorial project.</span><span>Not affiliated with Anthropic or OpenAI.</span><a href="/">Current index ↑</a></div></footer></div></body></html>'
+        ];
+        return new Response(request.method === "HEAD" ? null : parts.join(""), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin" } });
+      }
+    }
+
     if (request.method === "POST" && pathname === "/api/subscribe") return subscribe(request);
 
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
