@@ -63,7 +63,7 @@
       const top = document.createElement("div");
       top.className = "news-card-top";
       const tag = document.createElement("span");
-      tag.className = "news-tag " + (/anthropic|claude/i.test(item.publisher + " " + item.title) ? "tag-anthropic" : "tag-openai");
+      tag.className = "news-tag";
       tag.textContent = String(item.publisher || "AI NEWS").slice(0, 28).toUpperCase();
       const date = document.createElement("time");
       if (item.publishedAt) date.dateTime = new Date(item.publishedAt).toISOString();
@@ -199,6 +199,30 @@
       // Keep the source-linked headlines rendered in the HTML.
     }
   }
+
+  function filterProviders() {
+    const cards = $$("#provider-grid .provider-card");
+    const query = String($("#provider-search")?.value || "").trim().toLocaleLowerCase();
+    const group = String($("#provider-kind")?.value || "all");
+    let visible = 0;
+
+    cards.forEach((card) => {
+      const matchesQuery = !query || String(card.dataset.search || "").includes(query);
+      const matchesGroup = group === "all" || card.dataset.group === group;
+      const show = matchesQuery && matchesGroup;
+      card.hidden = !show;
+      if (show) visible += 1;
+    });
+
+    const count = $("#provider-count");
+    if (count) count.textContent = visible + (visible === 1 ? " provider" : " providers");
+    const empty = $("#provider-empty");
+    if (empty) empty.hidden = visible > 0;
+  }
+
+  $("#provider-search")?.addEventListener("input", filterProviders);
+  $("#provider-kind")?.addEventListener("change", filterProviders);
+  filterProviders();
 
   const menuToggle = $(".menu-toggle");
   const mobileNav = $("#mobile-nav");

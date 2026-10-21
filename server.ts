@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdir } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { currentScore, fallbackNews, history, methodology, type NewsItem } from "./src/data";
+import { providerCatalogUpdatedAt, providers, type AIProvider } from "./src/providers";
 
 const PORT = Number(Bun.env.PORT ?? 3000);
 const PUBLIC_DIR = resolve(import.meta.dir, "public");
@@ -52,6 +53,18 @@ function json(data: unknown, headers: HeadersInit = jsonHeaders, status = 200): 
   return new Response(JSON.stringify(data, null, 2), { status, headers });
 }
 
+function renderProviderCard(provider: AIProvider): string {
+  const searchText = [provider.name, provider.families, provider.products, provider.kind, provider.description].join(" ").toLowerCase();
+  return `<article class="provider-card" data-group="${htmlEscape(provider.group)}" data-search="${htmlEscape(searchText)}">
+    <div class="provider-card-top"><span class="provider-kind">${htmlEscape(provider.kind)}</span><span class="provider-mark" aria-hidden="true">${htmlEscape(provider.name.slice(0, 1))}</span></div>
+    <h3>${htmlEscape(provider.name)}</h3>
+    <p class="provider-families"><span>Families</span> ${htmlEscape(provider.families)}</p>
+    <p class="provider-products"><span>Products</span> ${htmlEscape(provider.products)}</p>
+    <p class="provider-description">${htmlEscape(provider.description)}</p>
+    <a class="provider-link" href="${htmlEscape(provider.sourceUrl)}" target="_blank" rel="noopener noreferrer">${htmlEscape(provider.sourceLabel)} <span aria-hidden="true">↗</span></a>
+  </article>`;
+}
+
 function rssText(block: string, tag: string): string {
   const match = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
   if (!match) return "";
@@ -74,9 +87,11 @@ function cleanUrl(input: string): string | null {
 }
 
 const feeds = [
-  { query: "site:openai.com/news GPT ChatGPT Codex when:7d", fallbackPublisher: "OpenAI" },
-  { query: "site:anthropic.com/news Claude Anthropic when:7d", fallbackPublisher: "Anthropic" },
-  { query: "AI models agents AI industry when:7d", fallbackPublisher: "AI industry" }
+  { query: "AI models OpenAI Anthropic Google Gemini Meta Llama Microsoft Copilot xAI Grok DeepSeek when:7d", fallbackPublisher: "AI provider news" },
+  { query: "AI models Alibaba Qwen Mistral Cohere Perplexity Amazon Nova NVIDIA when:7d", fallbackPublisher: "AI provider news" },
+  { query: "AI models Kimi Moonshot GLM MiniMax ByteDance Seed Baidu ERNIE Tencent Hunyuan when:7d", fallbackPublisher: "AI provider news" },
+  { query: "AI inference platform OpenRouter Hugging Face Groq when:7d", fallbackPublisher: "AI platform news" },
+  { query: "AI industry artificial intelligence agents when:7d", fallbackPublisher: "AI industry" }
 ];
 
 async function getFeed(feed: typeof feeds[number]): Promise<NewsItem[]> {
@@ -100,7 +115,7 @@ async function getFeed(feed: typeof feeds[number]): Promise<NewsItem[]> {
       const published = rssText(block, "pubDate");
       const source = rssText(block, "source") || feed.fallbackPublisher;
       const description = rssText(block, "description").slice(0, 360);
-      if (!title || !link || !/\b(ai|artificial intelligence|claude|anthropic|openai|chatgpt|gpt|codex|model|agent|llm)\b/i.test(title + " " + source)) continue;
+      if (!title || !link || !/\b(ai|artificial intelligence|claude|anthropic|openai|chatgpt|gpt|codex|gemini|google deepmind|llama|meta ai|microsoft|copilot|xai|grok|deepseek|qwen|mistral|cohere|perplexity|sonar|nova|nvidia|kimi|moonshot|glm|z\.ai|minimax|bytedance|seed|baidu|ernie|tencent|hunyuan|hugging face|openrouter|groq|model|agent|llm)\b/i.test(title + " " + source)) continue;
       const parsedDate = published ? new Date(published) : new Date();
       if (Number.isNaN(parsedDate.getTime())) continue;
       items.push({
@@ -146,9 +161,13 @@ async function refreshNews(force = false): Promise<void> {
 
 function buildOverview(origin: string): string {
   const selected = history[history.length - 1]!;
-  return `# GAP Index — Anthropic vs OpenAI
+  return `# GAP Index — AI provider directory and Anthropic vs OpenAI history
 
-> Editorial, source-linked comparison of the relative attractiveness of Claude and ChatGPT subscriptions and ecosystems.
+> A curated, source-linked directory of major AI model makers, assistants, and platforms. The historical score below compares Anthropic/Claude with OpenAI/ChatGPT only.
+
+- Provider directory: [${providers.length} selected organizations](${origin}/api/providers.json)
+- Directory updated: **${providerCatalogUpdatedAt}**
+- Coverage note: this selection is not exhaustive and is not a ranking by popularity, usage, or model quality.
 
 - Current score: **${currentScore}/100**
 - Reading: **${currentScore > 50 ? "Relative Anthropic edge" : currentScore < 50 ? "Relative OpenAI edge" : "Parity"}**
@@ -158,7 +177,7 @@ function buildOverview(origin: string): string {
 - History JSON: [api/history.json](${origin}/api/history.json)
 - Recent headlines: [api/news.json](${origin}/api/news.json)
 
-## Score direction
+## Anthropic vs OpenAI score direction
 ${methodology.direction}
 
 ## Weights
@@ -171,23 +190,24 @@ ${methodology.caveat}
 ${history.map((point) => `- **${point.label}: ${point.score}/100** — ${point.summary} Sources: ${point.sources.map((source) => source.url).join(" | ")}`).join("\n\n")}
 
 ## Editorial scope
-We compare published subscription information, model capabilities, coding/agent workflows, integrations, and distribution signals. Plan prices and limits can change; verify current terms on official provider websites before making a purchase.
+The monthly score compares published subscription information, model capabilities, coding/agent workflows, integrations, and distribution signals for Anthropic and OpenAI. It is not a score for the broader directory. The provider catalog includes official source links; some cloud and inference platforms host models made by other companies. Plan prices and limits can change, so verify current terms with each provider.
 `;
 }
 
 function buildLlmsTxt(origin: string): string {
   return `# GAP Index
-> Independent editorial tracker comparing Anthropic/Claude vs OpenAI/ChatGPT subscription value and ecosystem attractiveness.
+> Curated directory of major AI providers, plus a source-linked historical comparison of Anthropic/Claude and OpenAI/ChatGPT.
 
-GAP Index scores are directional editorial assessments, not a representative poll or audited market-share metric. A score of 50 is parity; above 50 tilts toward Anthropic; below 50 tilts toward OpenAI.
+The provider directory is a selected, non-exhaustive list, not a popularity or market-share ranking. The 0–100 monthly score applies only to Anthropic vs OpenAI; it is a directional editorial assessment, not a representative poll or audited market-share metric. A score of 50 is parity; above 50 tilts toward Anthropic; below 50 tilts toward OpenAI.
 
 ## Canonical resources
-- [Homepage](${origin}/): current index, latest news, monthly history, methodology, newsletter.
+- [Homepage](${origin}/): provider directory, recent AI news, pairwise monthly history, methodology, newsletter.
+- [Provider directory JSON](${origin}/api/providers.json): ${providers.length} selected model makers, assistants, and AI platforms with official links.
 - [Index data JSON](${origin}/api/index.json): current score, methodology and history.
 - [History JSON](${origin}/api/history.json): monthly readings from December 2025 onward.
 - [Latest news JSON](${origin}/api/news.json): recent headlines from cached RSS searches.
 - [Full overview](${origin}/llms-full.txt): expanded notes and all monthly summaries.
-- [Markdown overview](${origin}/api/overview.md): plain-text summary of the index.
+- [Markdown overview](${origin}/api/overview.md): plain-text summary of the index and its scope.
 
 ## Monthly archive
 ${history.map((point) => `- [${point.label} editorial score (${point.score}/100)](${origin}/history/${point.month}/) — ${point.phase}`).join("\n")}
@@ -196,7 +216,8 @@ ${history.map((point) => `- [${point.label} editorial score (${point.score}/100)
 1. Read the index direction and caveat before summarizing the score.
 2. Use the linked primary sources for factual claims.
 3. Never describe the editorial score as direct audience sentiment, live subscription pricing, or market share.
-4. For plan comparisons, verify current pricing and terms directly with [OpenAI](https://openai.com/chatgpt/pricing) and [Anthropic](https://claude.com/pricing).
+4. Treat model hosting platforms separately from the companies that develop the hosted models.
+5. For plan comparisons, verify current prices and terms on the relevant official provider site.
 `;
 }
 
@@ -327,11 +348,24 @@ Bun.serve({
       return json({ ok: true, service: "gap-index", score: currentScore });
     }
 
+    if (request.method === "GET" && pathname === "/api/providers.json") {
+      return json({
+        name: "Selected AI provider directory",
+        updatedAt: providerCatalogUpdatedAt,
+        count: providers.length,
+        selectionNote: "Curated, non-exhaustive coverage; not a ranking by popularity, usage, or model quality.",
+        providers
+      });
+    }
+
     if (request.method === "GET" && (pathname === "/api/index.json" || pathname === "/api/history.json")) {
       const data = pathname.endsWith("history.json")
-        ? { updatedAt: "2026-10-09", scoreDirection: methodology.direction, history }
+        ? { updatedAt: "2026-10-09", scoreScope: "Anthropic vs OpenAI only", scoreDirection: methodology.direction, history }
         : {
-            name: "GAP Index — Anthropic vs OpenAI",
+            name: "GAP Index — AI provider directory and Anthropic vs OpenAI history",
+            scoreScope: "Anthropic vs OpenAI only",
+            providerCatalogUrl: `${origin}/api/providers.json`,
+            providerCount: providers.length,
             score: currentScore,
             scoreLabel: currentScore > 50 ? "Relative Anthropic edge" : currentScore < 50 ? "Relative OpenAI edge" : "Parity",
             latestMonth: history[history.length - 1]?.label,
@@ -457,7 +491,11 @@ Bun.serve({
     if (extension === ".html") {
       headers.set("cache-control", "no-cache");
       let html = await file.text();
-      html = html.replaceAll("__SITE_URL__", htmlEscape(origin)).replaceAll("__TODAY__", new Date().toISOString().slice(0, 10));
+      html = html.replaceAll("__SITE_URL__", htmlEscape(origin))
+        .replaceAll("__TODAY__", new Date().toISOString().slice(0, 10))
+        .replaceAll("__PROVIDER_COUNT__", String(providers.length))
+        .replaceAll("__PROVIDER_UPDATED_AT__", providerCatalogUpdatedAt)
+        .replaceAll("__PROVIDER_CARDS__", providers.map(renderProviderCard).join("\n"));
       return new Response(request.method === "HEAD" ? null : html, { headers });
     }
     headers.set("cache-control", extension === ".svg" ? "public, max-age=86400" : "public, max-age=3600, stale-while-revalidate=86400");

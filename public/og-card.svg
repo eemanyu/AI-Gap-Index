@@ -21,17 +21,17 @@
     <path d="M16 18 23 11" stroke="#f4f3ee" stroke-width="2.6" stroke-linecap="round"/>
   </g>
   <text x="145" y="121" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" letter-spacing="-1" fill="#f4f3ee">GAP / INDEX</text>
-  <text x="96" y="223" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="4" fill="#adb1a2">INDEPENDENT AI MARKET SIGNAL</text>
-  <text x="92" y="305" font-family="Georgia, 'Times New Roman', serif" font-size="70" letter-spacing="-3" fill="#f4f3ee">Anthropic vs OpenAI</text>
+  <text x="96" y="223" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="4" fill="#adb1a2">CURATED AI PROVIDER DIRECTORY</text>
+  <text x="92" y="305" font-family="Georgia, 'Times New Roman', serif" font-size="70" letter-spacing="-3" fill="#f4f3ee">Major AI providers</text>
   <text x="97" y="373" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" letter-spacing="-2" fill="#d6fa8b">GAP Index</text>
-  <text x="99" y="427" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#b5baaa">Subscription value · coding tools · ecosystem momentum</text>
+  <text x="99" y="427" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#b5baaa">Model makers · AI assistants · platform providers</text>
   <g transform="translate(822 175)">
     <path d="M0 200 A150 150 0 0 1 300 200" fill="none" stroke="#3b3e33" stroke-width="18" stroke-linecap="round"/>
     <path d="M0 200 A150 150 0 0 1 300 200" fill="none" stroke="url(#arc)" stroke-width="9" stroke-linecap="round"/>
     <path d="M150 200 164 53" stroke="#f4f3ee" stroke-width="5" stroke-linecap="round"/>
     <circle cx="150" cy="200" r="13" fill="#f4f3ee"/>
-    <text x="150" y="290" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" letter-spacing="-5" text-anchor="middle" fill="#f4f3ee">52</text>
-    <text x="150" y="320" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3" text-anchor="middle" fill="#d6fa8b">NEAR PARITY</text>
+    <text x="150" y="290" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" letter-spacing="-5" text-anchor="middle" fill="#f4f3ee">23</text>
+    <text x="150" y="320" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3" text-anchor="middle" fill="#d6fa8b">SELECTED PROVIDERS</text>
   </g>
-  <text x="98" y="536" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#858a7a">Source-linked monthly history from December 2025 · Editorial, not polling</text>
+  <text x="98" y="536" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#858a7a">Curated directory · Not a usage ranking · Pairwise history: Anthropic vs OpenAI</text>
 </svg>

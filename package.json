@@ -1,5 +1,5 @@
 {
-  "name": "anthropic-vs-openai-gap-index",
+  "name": "ai-provider-gap-index",
   "version": "0.1.0",
   "private": true,
   "type": "module",
