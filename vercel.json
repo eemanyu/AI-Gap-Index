@@ -1,6 +1,9 @@
 {
-  "framework": null,
-  "installCommand": "echo 'no dependencies to install'",
-  "buildCommand": "echo 'no build step'",
-  "outputDirectory": "public"
+  "framework": "bun",
+  "bunVersion": "1.4.x",
+  "functions": {
+    "server.ts": {
+      "includeFiles": "{data/**,public/**}"
+    }
+  }
 }

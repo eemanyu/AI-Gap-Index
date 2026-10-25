@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>About, methodology and corrections — GAP Index</title>
+  <meta name="description" content="How the GAP Index scores AI providers, how sources are selected, how corrections work, and what changed in each methodology version.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="__SITE_URL__/about/">
+  <link rel="alternate" type="application/rss+xml" title="GAP Index monthly updates" href="__SITE_URL__/feed.xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="site-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="GAP Index home"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span class="brand-name">GAP<span>/</span>INDEX</span></a>
+      <nav class="primary-nav" aria-label="Main navigation"><a href="/">Current index</a><a href="/#field">The field</a><a href="/#methodology">Methodology</a></nav>
+      <a class="header-cta" href="/#field">Provider scores ↗</a>
+    </header>
+    <main class="archive-body">
+      <a class="archive-back" href="/">← GAP Index home</a>
+      <div class="archive-label">About &amp; editorial policy</div>
+      <h1>How the index works.</h1>
+      <p class="archive-subtitle">GAP Index is an independent editorial project. It publishes absolute provider scores for ten AI ecosystems and a separate monthly Anthropic vs OpenAI GAP history. It is not affiliated with any provider, and it is not a poll, market-share audit, or investment recommendation.</p>
+
+      <section id="methodology">
+        <h2>How scores are built</h2>
+        <p class="archive-subtitle">Every provider receives a 0–100 score on the same four weighted factors. The weighted total is computed, not hand-entered. The monthly GAP history uses a separate relative scale where 50 is parity.</p>
+        <table class="factor-table">
+          <thead><tr><th scope="col">Factor</th><th scope="col">Weight</th><th scope="col">What it covers</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Subscription value and usage limits</th><td>30%</td><td>Plan value, included usage, limits, and access friction.</td></tr>
+            <tr><th scope="row">Model capability and reliability</th><td>30%</td><td>Capability, consistency, tool use, and practical reliability.</td></tr>
+            <tr><th scope="row">Coding and agent workflows</th><td>25%</td><td>Coding tools, agent execution, terminal/browser work, and developer pull.</td></tr>
+            <tr><th scope="row">Ecosystem, distribution, and integrations</th><td>15%</td><td>Distribution, integrations, enterprise availability, and developer ecosystem.</td></tr>
+          </tbody>
+        </table>
+        <p class="archive-subtitle">Provider score: 0–49 developing, 50 mid-field, 51–100 leading. GAP vs. OpenAI: 0 = OpenAI edge, 50 = parity, 100 = Anthropic edge. These are different scales and are labeled separately in the interface and API.</p>
+      </section>
+
+      <section id="sources">
+        <h2>Source policy</h2>
+        <p class="archive-subtitle">Each provider has at least one primary source (the provider's own pricing or news page) and at least one independent source (a third-party benchmark, traffic estimate, or developer survey). Citation coverage is <strong>__COVERAGE_CITED__/__COVERAGE_TOTAL__</strong> for monthly entries and <strong>__INDEPENDENT_SOURCES__/__PROVIDER_COUNT__</strong> for independent provider corroboration.</p>
+        <p class="archive-subtitle">A link is not proof that every claim is correct. Sources are context for an editorial judgment. When a source is stale, paywalled, or changes, the score should be reviewed rather than treated as permanent.</p>
+      </section>
+
+      <section id="corrections">
+        <h2>Corrections</h2>
+        <p class="archive-subtitle">If a score, source, or label is wrong, open an issue on <a href="https://github.com/eemanyu/AI-Gap-Index/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> with the month, provider, and the evidence. Corrections that change a published score are recorded in the changelog below. The site does not silently rewrite a score without a note.</p>
+      </section>
+
+      <section id="changelog">
+        <h2>Changelog</h2>
+        <div class="archive-signal">
+          <h3>2026-10-v2 — current</h3>
+          <p>Added absolute provider scores for ten providers, factor breakdowns, independent-source coverage, provider detail pages, provider JSON/CSV exports, RSS, and this methodology page. Split the absolute provider scale from the relative Anthropic vs OpenAI GAP history. Last reviewed __UPDATED_DATE__.</p>
+        </div>
+        <div class="archive-signal" style="margin-top:12px;">
+          <h3>2026-10-v1</h3>
+          <p>Initial source-linked Anthropic vs OpenAI GAP history with monthly entries, archive pages, JSON/Markdown endpoints, and a newsletter signup.</p>
+        </div>
+      </section>
+
+      <section id="independence">
+        <h2>Independence and contact</h2>
+        <p class="archive-subtitle">GAP Index is not affiliated with Anthropic, OpenAI, Google, Microsoft, Meta, Amazon, Mistral AI, xAI, DeepSeek, or Moonshot AI. Company names and linked reporting remain the property of their respective owners. Code is MIT licensed. For corrections, use GitHub Issues; for data access, use the JSON endpoints below.</p>
+        <nav class="archive-nav" aria-label="Related pages">
+          <a href="/api/index.json">Index JSON →</a>
+          <a href="/api/providers.json">Providers JSON →</a>
+          <a href="/api/history.json">History JSON →</a>
+          <a href="/feed.xml">RSS →</a>
+        </nav>
+      </section>
+
+      <p class="archive-subtitle" style="margin-top:30px;font-size:11px;">Methodology version __METHODOLOGY_VERSION__ · last reviewed __UPDATED_DATE__ · © __YEAR__ GAP Index.</p>
+    </main>
+    <footer class="site-footer">
+      <div class="footer-bottom"><span>GAP Index · Independent editorial project.</span><span>Not affiliated with any provider.</span><a href="/">Current index ↑</a></div>
+    </footer>
+  </div>
+</body>
+</html>

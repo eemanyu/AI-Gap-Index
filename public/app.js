@@ -20,16 +20,24 @@
     return "Clear OpenAI edge";
   };
 
-  function updateGauge(score, label, summary) {
+  const providerLabelForScore = (score) => {
+    if (score >= 80) return "Category leader";
+    if (score >= 70) return "Strong position";
+    if (score >= 60) return "Competitive";
+    if (score >= 50) return "Developing";
+    return "Niche";
+  };
+
+  function updateGauge(score, headline, summary) {
     const safeScore = Math.max(0, Math.min(100, Number(score) || 50));
     const scoreText = String(safeScore);
     if (scoreNumber) scoreNumber.textContent = scoreText;
-    if (scoreStatus) scoreStatus.innerHTML = '<span class="status-dot" aria-hidden="true"></span> ' + labelForScore(safeScore);
-    if (scoreInterpretation) scoreInterpretation.textContent = label || (safeScore === 50 ? "The race is at parity." : safeScore > 50 ? "Anthropic holds a narrow relative edge." : "OpenAI holds a narrow relative edge.");
+    if (scoreStatus) scoreStatus.innerHTML = '<span class="status-dot" aria-hidden="true"></span> ' + providerLabelForScore(safeScore);
+    if (scoreInterpretation && headline) scoreInterpretation.textContent = headline;
     if (scoreSummary && summary) scoreSummary.textContent = summary;
     if (gaugeNeedle) gaugeNeedle.style.transform = `rotate(${(safeScore * 1.8) - 180}deg)`;
-    if (gaugeTitle) gaugeTitle.textContent = `GAP Index score: ${safeScore} out of 100`;
-    if (gaugeDesc) gaugeDesc.textContent = `A semicircular gauge from OpenAI edge at zero, through parity at fifty, to Anthropic edge at one hundred. Current reading: ${safeScore}.`;
+    if (gaugeTitle) gaugeTitle.textContent = `Anthropic score: ${safeScore} out of 100`;
+    if (gaugeDesc) gaugeDesc.textContent = `A semicircular gauge from 0 to 100. Current Anthropic score: ${safeScore}.`;
   }
 
   function formatDate(dateString) {
@@ -162,8 +170,26 @@
       const response = await fetch("/api/index.json", { headers: { accept: "application/json" }, cache: "no-cache" });
       if (!response.ok) return;
       const payload = await response.json();
-      if (Number.isFinite(payload.score)) {
-        updateGauge(payload.score, labelForScore(payload.score), payload.history?.at(-1)?.summary ? payload.history.at(-1).summary.slice(0, 210) : "");
+      const mainScore = Number.isFinite(payload.anthropicScore) ? payload.anthropicScore : payload.score;
+      if (Number.isFinite(mainScore)) {
+        updateGauge(mainScore, payload.providerHeadline, payload.providerSummary);
+      }
+      if (Array.isArray(payload.providers)) {
+        payload.providers.forEach((provider) => {
+          const row = $('.provider-row[data-provider="' + provider.id + '"]');
+          if (!row) return;
+          const score = Number(provider.score);
+          if (!Number.isFinite(score)) return;
+          const scoreNode = $(".provider-score", row);
+          if (scoreNode) scoreNode.replaceChildren(document.createTextNode(String(score)), Object.assign(document.createElement("small"), { textContent: "/100" }));
+          const statusNode = $(".provider-status", row);
+          if (statusNode) statusNode.textContent = providerLabelForScore(score);
+          const fill = $(".provider-gauge path:nth-of-type(2)", row);
+          if (fill) fill.setAttribute("stroke-dasharray", ((score / 100) * Math.PI * 50).toFixed(2) + " 157.08");
+          const needle = $(".provider-gauge g", row);
+          if (needle) needle.setAttribute("transform", `rotate(${score * 1.8 - 180} 60 60)`);
+          row.setAttribute("aria-label", `${provider.name}: ${score} out of 100, ${providerLabelForScore(score)}`);
+        });
       }
       if (Array.isArray(payload.history)) {
         const current = payload.history.at(-1);
@@ -195,6 +221,8 @@
       if (!response.ok) return;
       const payload = await response.json();
       renderNews(payload.items);
+      const indicator = $("#news-refresh");
+      if (indicator) indicator.lastChild.textContent = payload.source === "rss" ? " LIVE RSS + CURATED" : " CURATED FALLBACK";
     } catch {
       // Keep the source-linked headlines rendered in the HTML.
     }

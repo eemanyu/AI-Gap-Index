@@ -1,12 +1,34 @@
 import { Database } from "bun:sqlite";
 import { mkdir } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
-import { currentScore, fallbackNews, history, methodology, type NewsItem } from "./src/data";
+import {
+  currentProvider,
+  currentProviderScore,
+  currentScore,
+  currentScoreDelta,
+  fallbackNews,
+  history,
+  methodology,
+  providerSourceCoverage,
+  providers,
+  scoreProvider,
+  type NewsItem
+} from "./src/data";
+import { renderHome, renderProviderPage } from "./src/render";
 
 const PORT = Number(Bun.env.PORT ?? 3000);
 const PUBLIC_DIR = resolve(import.meta.dir, "public");
-const DB_PATH = resolve(import.meta.dir, Bun.env.DB_PATH ?? "./data/gap-index.sqlite");
-const SITE_URL = (Bun.env.SITE_URL ?? "").replace(/\/$/, "");
+const isVercel = Boolean(process.env.VERCEL);
+const DB_PATH = Bun.env.DB_PATH
+  ? resolve(import.meta.dir, Bun.env.DB_PATH)
+  : isVercel
+    ? "/tmp/gap-index.sqlite"
+    : resolve(import.meta.dir, "./data/gap-index.sqlite");
+const SITE_URL = (
+  Bun.env.SITE_URL
+  || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "")
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
+).replace(/\/$/, "");
 const RESEND_API_KEY = Bun.env.RESEND_API_KEY;
 const RESEND_AUDIENCE_ID = Bun.env.RESEND_AUDIENCE_ID;
 
@@ -26,11 +48,13 @@ const insertSubscriber = db.query(
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
-  "cache-control": "public, max-age=60, stale-while-revalidate=300"
+  "cache-control": "public, max-age=60, stale-while-revalidate=300",
+  "access-control-allow-origin": "*"
 };
 
 let newsCache: NewsItem[] = fallbackNews;
 let newsCacheAt = 0;
+let newsSource: "rss" | "fallback" = "fallback";
 let refreshInFlight: Promise<void> | null = null;
 const NEWS_TTL_MS = 15 * 60 * 1000;
 const MAX_NEWS = 8;
@@ -50,6 +74,40 @@ function htmlEscape(value: string): string {
 
 function json(data: unknown, headers: HeadersInit = jsonHeaders, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), { status, headers });
+}
+
+function providerPayload(origin: string) {
+  return providers.map((provider) => ({
+    ...provider,
+    score: scoreProvider(provider),
+    url: `${origin}/providers/${provider.id}/`
+  }));
+}
+
+function htmlHeaders(cache = "public, max-age=300"): HeadersInit {
+  return {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": cache,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "content-security-policy": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'"
+  };
+}
+
+function historyCsv(): string {
+  const rows = [["month", "label", "score", "phase", "summary", "sources"]];
+  for (const point of history) {
+    rows.push([
+      point.month,
+      point.label,
+      String(point.score),
+      point.phase,
+      point.summary,
+      point.sources.map((source) => source.url).join(" | ")
+    ]);
+  }
+  return rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n") + "\n";
 }
 
 function rssText(block: string, tag: string): string {
@@ -135,7 +193,12 @@ async function refreshNews(force = false): Promise<void> {
           return true;
         })
         .slice(0, MAX_NEWS);
-      if (merged.length >= 3) newsCache = merged;
+      if (merged.length >= 3) {
+        newsCache = merged;
+        newsSource = "rss";
+      } else {
+        newsSource = "fallback";
+      }
       newsCacheAt = Date.now();
     } finally {
       refreshInFlight = null;
@@ -146,17 +209,24 @@ async function refreshNews(force = false): Promise<void> {
 
 function buildOverview(origin: string): string {
   const selected = history[history.length - 1]!;
-  return `# GAP Index — Anthropic vs OpenAI
+  return `# GAP Index — AI provider scores
 
-> Editorial, source-linked comparison of the relative attractiveness of Claude and ChatGPT subscriptions and ecosystems.
+> Editorial, source-linked comparison of AI provider attractiveness, plus a monthly Anthropic vs OpenAI GAP history.
 
-- Current score: **${currentScore}/100**
-- Reading: **${currentScore > 50 ? "Relative Anthropic edge" : currentScore < 50 ? "Relative OpenAI edge" : "Parity"}**
+- Anthropic provider score: **${currentProviderScore}/100**
+- GAP vs. OpenAI: **${currentScore}/100** (${currentScore > 50 ? "relative Anthropic edge" : currentScore < 50 ? "relative OpenAI edge" : "parity"})
+- Providers covered: **${providers.length}**
 - Monthly source coverage: **${methodology.sourceCoverage.cited}/${methodology.sourceCoverage.total} points linked**
+- Independent provider sources: **${providerSourceCoverage.independent}/${providerSourceCoverage.total}**
 - Latest editorial month: **${selected.label}**
+- Methodology: **${methodology.version}**, last reviewed **${methodology.lastReviewed}**
 - Main JSON: [api/index.json](${origin}/api/index.json)
+- Provider JSON: [api/providers.json](${origin}/api/providers.json)
 - History JSON: [api/history.json](${origin}/api/history.json)
 - Recent headlines: [api/news.json](${origin}/api/news.json)
+
+## Provider scores
+${providers.map((provider) => `- **${provider.name} (${provider.shortName}): ${scoreProvider(provider)}/100** — ${provider.headline} Sources: ${provider.sources.map((source) => source.url).join(" | ")}`).join("\n")}
 
 ## Score direction
 ${methodology.direction}
@@ -167,54 +237,89 @@ ${methodology.weights.map((item) => `- ${item.factor}: ${item.weight}%`).join("\
 ## Important caveat
 ${methodology.caveat}
 
-## Historical readings
+## Historical GAP readings
 ${history.map((point) => `- **${point.label}: ${point.score}/100** — ${point.summary} Sources: ${point.sources.map((source) => source.url).join(" | ")}`).join("\n\n")}
 
 ## Editorial scope
-We compare published subscription information, model capabilities, coding/agent workflows, integrations, and distribution signals. Plan prices and limits can change; verify current terms on official provider websites before making a purchase.
+We compare published subscription information, model capabilities, coding/agent workflows, integrations, and distribution signals. Provider scores are absolute; the GAP vs. OpenAI is relative. Plan prices and limits can change; verify current terms on official provider websites before making a purchase.
 `;
 }
 
 function buildLlmsTxt(origin: string): string {
   return `# GAP Index
-> Independent editorial tracker comparing Anthropic/Claude vs OpenAI/ChatGPT subscription value and ecosystem attractiveness.
+> Independent editorial tracker scoring ten AI providers and keeping a monthly Anthropic vs OpenAI GAP history.
 
-GAP Index scores are directional editorial assessments, not a representative poll or audited market-share metric. A score of 50 is parity; above 50 tilts toward Anthropic; below 50 tilts toward OpenAI.
+Provider scores are absolute editorial assessments (0–100). The GAP vs. OpenAI is relative: 50 = parity, above 50 tilts toward Anthropic, below 50 tilts toward OpenAI. Neither is a representative poll or audited market-share metric.
 
 ## Canonical resources
-- [Homepage](${origin}/): current index, latest news, monthly history, methodology, newsletter.
-- [Index data JSON](${origin}/api/index.json): current score, methodology and history.
-- [History JSON](${origin}/api/history.json): monthly readings from December 2025 onward.
+- [Homepage](${origin}/): provider gauges, latest news, GAP history, methodology.
+- [Index data JSON](${origin}/api/index.json): provider scores, methodology and history.
+- [Provider JSON](${origin}/api/providers.json): all ten provider factor breakdowns and sources.
+- [History JSON](${origin}/api/history.json): monthly GAP readings from December 2025 onward.
+- [History CSV](${origin}/api/history.csv): flat monthly history export.
 - [Latest news JSON](${origin}/api/news.json): recent headlines from cached RSS searches.
-- [Full overview](${origin}/llms-full.txt): expanded notes and all monthly summaries.
+- [RSS feed](${origin}/feed.xml): monthly GAP updates.
+- [Full overview](${origin}/llms-full.txt): expanded notes and all provider summaries.
 - [Markdown overview](${origin}/api/overview.md): plain-text summary of the index.
+- [About, methodology and corrections](${origin}/about/): editorial policy and changelog.
 
-## Monthly archive
+## Providers
+${providers.map((provider) => `- [${provider.name} (${provider.shortName})](${origin}/providers/${provider.id}/) — ${scoreProvider(provider)}/100. ${provider.headline}`).join("\n")}
+
+## Monthly GAP archive
 ${history.map((point) => `- [${point.label} editorial score (${point.score}/100)](${origin}/history/${point.month}/) — ${point.phase}`).join("\n")}
 
 ## Recommended agent usage
-1. Read the index direction and caveat before summarizing the score.
-2. Use the linked primary sources for factual claims.
-3. Never describe the editorial score as direct audience sentiment, live subscription pricing, or market share.
-4. For plan comparisons, verify current pricing and terms directly with [OpenAI](https://openai.com/chatgpt/pricing) and [Anthropic](https://claude.com/pricing).
+1. Read the provider score direction and caveat before summarizing a score.
+2. Use the linked primary and independent sources for factual claims.
+3. Never describe a provider score as direct audience sentiment, live subscription pricing, or market share.
+4. For plan comparisons, verify current pricing and terms directly with the provider.
 `;
 }
 
 function buildLlmsFull(origin: string): string {
   return buildOverview(origin) + `
 
+## Provider factor breakdowns
+${providers.map((provider) => `### ${provider.name} (${provider.shortName}) — ${scoreProvider(provider)}/100
+${provider.summary}
+- Subscription value: ${provider.factors.subscription}/100
+- Model capability: ${provider.factors.capability}/100
+- Coding and agents: ${provider.factors.coding}/100
+- Ecosystem and distribution: ${provider.factors.ecosystem}/100
+- Detail page: ${origin}/providers/${provider.id}/
+- Sources: ${provider.sources.map((source) => `${source.type ?? "primary"}: ${source.url}`).join(" | ")}`).join("\n\n")}
+
 ## Current headlines
 ${newsCache.map((item) => `- [${item.title}](${item.url}) — ${item.publisher}, ${item.publishedAt.slice(0, 10)}. ${item.summary}`).join("\n")}
 `;
+}
+
+function buildFeed(origin: string): string {
+  const items = history
+    .slice()
+    .reverse()
+    .map((point) => `<item><title>${xmlEscape(`${point.label}: ${point.phase} (${point.score}/100)`)}</title><link>${xmlEscape(`${origin}/history/${point.month}/`)}</link><guid>${xmlEscape(`${origin}/history/${point.month}/`)}</guid><pubDate>${new Date(`${point.month}-01T00:00:00Z`).toUTCString()}</pubDate><description>${xmlEscape(point.summary)}</description></item>`)
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>GAP Index monthly updates</title><link>${xmlEscape(origin + "/")}</link><description>Editorial provider scores and the monthly Anthropic vs OpenAI GAP history.</description><language>en</language><lastBuildDate>${new Date(`${methodology.lastReviewed}T00:00:00Z`).toUTCString()}</lastBuildDate>${items}</channel></rss>`;
 }
 
 function notFound(): Response {
   return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
 
+function clientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || request.headers.get("x-real-ip") || request.headers.get("cf-connecting-ip") || "unknown";
+}
+
 function rateLimit(request: Request): boolean {
-  const ip = request.headers.get("x-real-ip") ?? request.headers.get("cf-connecting-ip") ?? "unknown";
+  const ip = clientIp(request);
   const now = Date.now();
+  for (const [key, value] of rateLimits) {
+    if (value.resetAt <= now) rateLimits.delete(key);
+  }
   const current = rateLimits.get(ip);
   if (!current || current.resetAt <= now) {
     rateLimits.set(ip, { count: 1, resetAt: now + 10 * 60_000 });
@@ -316,38 +421,78 @@ async function unsubscribe(request: Request): Promise<Response> {
 console.info(`GAP Index server starting on :${PORT}`);
 void refreshNews();
 
-Bun.serve({
-  port: PORT,
-  async fetch(request) {
+async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = decodeURIComponent(url.pathname);
     const origin = siteOrigin(request);
 
     if (request.method === "GET" && pathname === "/healthz") {
-      return json({ ok: true, service: "gap-index", score: currentScore });
+      return json({ ok: true, service: "gap-index", score: currentScore, anthropicScore: currentProviderScore });
     }
 
-    if (request.method === "GET" && (pathname === "/api/index.json" || pathname === "/api/history.json")) {
-      const data = pathname.endsWith("history.json")
-        ? { updatedAt: "2026-10-09", scoreDirection: methodology.direction, history }
-        : {
-            name: "GAP Index — Anthropic vs OpenAI",
-            score: currentScore,
-            scoreLabel: currentScore > 50 ? "Relative Anthropic edge" : currentScore < 50 ? "Relative OpenAI edge" : "Parity",
-            latestMonth: history[history.length - 1]?.label,
-            updatedAt: "2026-10-09",
-            scoreDirection: methodology.direction,
-            methodology,
-            history: history.map((point) => ({ ...point, url: `${origin}/history/${point.month}/` })),
-            newsUrl: `${origin}/api/news.json`,
-            caveat: methodology.caveat
-          };
-      return json(data);
+    if (request.method === "GET" && pathname === "/api/index.json") {
+      return json({
+        schemaVersion: "2026-10-v2",
+        name: "GAP Index — AI provider scores",
+        updatedAt: methodology.lastReviewed,
+        anthropicScore: currentProviderScore,
+        providerHeadline: currentProvider.headline,
+        providerSummary: currentProvider.summary,
+        score: currentScore,
+        scoreDelta: currentScoreDelta,
+        scoreLabel: currentScore > 50 ? "Relative Anthropic edge" : currentScore < 50 ? "Relative OpenAI edge" : "Parity",
+        latestMonth: history[history.length - 1]?.label,
+        scoreDirection: methodology.direction,
+        methodology,
+        providerSourceCoverage,
+        providers: providerPayload(origin),
+        history: history.map((point) => ({ ...point, url: `${origin}/history/${point.month}/` })),
+        newsUrl: `${origin}/api/news.json`,
+        providersUrl: `${origin}/api/providers.json`,
+        feedUrl: `${origin}/feed.xml`,
+        caveat: methodology.caveat
+      });
+    }
+
+    if (request.method === "GET" && pathname === "/api/providers.json") {
+      return json({
+        schemaVersion: "2026-10-v2",
+        updatedAt: methodology.lastReviewed,
+        methodology,
+        sourceCoverage: providerSourceCoverage,
+        providers: providerPayload(origin)
+      });
+    }
+
+    if (request.method === "GET" && pathname === "/api/history.json") {
+      return json({
+        schemaVersion: "2026-10-v2",
+        updatedAt: methodology.lastReviewed,
+        scoreDirection: methodology.direction,
+        history: history.map((point) => ({ ...point, url: `${origin}/history/${point.month}/` }))
+      });
+    }
+
+    if (request.method === "GET" && pathname === "/api/history.csv") {
+      return new Response(historyCsv(), {
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": 'attachment; filename="gap-index-history.csv"',
+          "cache-control": "public, max-age=300",
+          "access-control-allow-origin": "*"
+        }
+      });
     }
 
     if (request.method === "GET" && pathname === "/api/news.json") {
       void refreshNews();
-      return json({ updatedAt: new Date(newsCacheAt || Date.now()).toISOString(), staleAfterSeconds: NEWS_TTL_MS / 1000, items: newsCache });
+      return json({
+        updatedAt: newsCacheAt ? new Date(newsCacheAt).toISOString() : null,
+        staleAfterSeconds: NEWS_TTL_MS / 1000,
+        source: newsSource,
+        stale: newsSource !== "rss" || Date.now() - newsCacheAt > NEWS_TTL_MS,
+        items: newsCache
+      });
     }
 
     if (request.method === "GET" && pathname === "/api/overview.md") {
@@ -363,15 +508,28 @@ Bun.serve({
       return new Response(buildLlmsFull(origin), { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" } });
     }
 
+    if (request.method === "GET" && pathname === "/feed.xml") {
+      return new Response(buildFeed(origin), { headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=300" } });
+    }
+
     if (request.method === "GET" && pathname === "/robots.txt") {
       const body = `User-agent: *\nAllow: /\nDisallow: /api/subscribe\n\nSitemap: ${origin}/sitemap.xml\n`;
       return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
 
     if (request.method === "GET" && pathname === "/sitemap.xml") {
-      const archiveUrls = history.map((point) => `  <url><loc>${xmlEscape(origin + "/history/" + point.month + "/")}</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>`).join("\n");
-      const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${xmlEscape(origin + "/")}</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n${archiveUrls}\n</urlset>`;
+      const lastmod = methodology.lastReviewed;
+      const archiveUrls = history.map((point) => `  <url><loc>${xmlEscape(origin + "/history/" + point.month + "/")}</loc><lastmod>${xmlEscape(lastmod)}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`).join("\n");
+      const providerUrls = providers.map((provider) => `  <url><loc>${xmlEscape(origin + "/providers/" + provider.id + "/")}</loc><lastmod>${xmlEscape(provider.lastReviewed)}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`).join("\n");
+      const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${xmlEscape(origin + "/")}</loc><lastmod>${xmlEscape(lastmod)}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>\n  <url><loc>${xmlEscape(origin + "/about/")}</loc><lastmod>${xmlEscape(lastmod)}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>\n${providerUrls}\n${archiveUrls}\n</urlset>`;
       return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && pathname.startsWith("/providers/")) {
+      const providerMatch = pathname.match(/^\/providers\/([a-z0-9-]+)\/?$/);
+      const provider = providerMatch ? providers.find((item) => item.id === providerMatch[1]) : undefined;
+      if (!provider) return notFound();
+      return new Response(request.method === "HEAD" ? null : renderProviderPage(provider, origin), { headers: htmlHeaders("public, max-age=300") });
     }
 
     if (request.method === "GET" || request.method === "HEAD") {
@@ -424,7 +582,7 @@ Bun.serve({
           '<nav class="archive-nav" aria-label="Monthly archive navigation">' + nav + '</nav></main>',
           '<footer class="site-footer"><div class="footer-bottom"><span>GAP Index · Independent editorial project.</span><span>Not affiliated with Anthropic or OpenAI.</span><a href="/">Current index ↑</a></div></footer></div></body></html>'
         ];
-        return new Response(request.method === "HEAD" ? null : parts.join(""), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin" } });
+        return new Response(request.method === "HEAD" ? null : parts.join(""), { headers: htmlHeaders("public, max-age=300") });
       }
     }
 
@@ -456,11 +614,27 @@ Bun.serve({
     headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
     if (extension === ".html") {
       headers.set("cache-control", "no-cache");
+      headers.set("content-security-policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'");
       let html = await file.text();
-      html = html.replaceAll("__SITE_URL__", htmlEscape(origin)).replaceAll("__TODAY__", new Date().toISOString().slice(0, 10));
+      if (relativePath === "index.html") {
+        html = renderHome(html, origin);
+      } else {
+        html = html
+          .replaceAll("__SITE_URL__", htmlEscape(origin))
+          .replaceAll("__TODAY__", new Date().toISOString().slice(0, 10))
+          .replaceAll("__YEAR__", String(new Date().getUTCFullYear()))
+          .replaceAll("__LAST_REVIEWED__", methodology.lastReviewed)
+          .replaceAll("__UPDATED_DATE__", methodology.lastReviewed)
+          .replaceAll("__METHODOLOGY_VERSION__", methodology.version)
+          .replaceAll("__COVERAGE_CITED__", String(methodology.sourceCoverage.cited))
+          .replaceAll("__COVERAGE_TOTAL__", String(methodology.sourceCoverage.total))
+          .replaceAll("__INDEPENDENT_SOURCES__", String(providerSourceCoverage.independent))
+          .replaceAll("__PROVIDER_COUNT__", String(providers.length));
+      }
       return new Response(request.method === "HEAD" ? null : html, { headers });
     }
     headers.set("cache-control", extension === ".svg" ? "public, max-age=86400" : "public, max-age=3600, stale-while-revalidate=86400");
     return new Response(request.method === "HEAD" ? null : file, { headers });
   }
-});
+
+export default { fetch: handle };
