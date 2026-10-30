@@ -715,3 +715,10 @@ body { background: var(--paper); color: var(--ink); }
   .newsletter-section { margin-left: 20px; margin-right: 20px; }
   .faq-grid { grid-template-columns: 1fr; }
 }
+
+/* No residual glow or elevated effects in the refined interface. */
+.email-field:focus-within { border-color: #718071; box-shadow: none; }
+.mobile-nav { box-shadow: none; background: #141816; }
+.history-bar.is-selected .bar-track i { box-shadow: none; }
+.change-chip > span { font-size: 12px; }
+.provider-row .provider-status::before { display: inline-block; content: ""; width: 5px; height: 5px; margin-right: 7px; border-radius: 50%; vertical-align: middle; }
