@@ -91,13 +91,32 @@ export function renderProviderRows(): string {
 
 export function renderHistoryBars(): string {
   const currentMonth = history.at(-1)?.month;
-  return history
-    .map((point) => {
-      const { month, year } = monthParts(point.label);
-      const selected = point.month === currentMonth;
-      return `<button class="history-bar${selected ? " is-selected" : ""}" type="button" data-month="${esc(point.month)}" aria-label="${esc(point.label)}, score ${point.score}" aria-pressed="${selected}"><span class="bar-value">${point.score}</span><span class="bar-track"><i style="height:${point.score}%"></i></span><span class="bar-month">${esc(month)}</span><span class="bar-year">${esc(year)}</span></button>`;
-    })
-    .join("");
+  const width = 1000;
+  const left = 30;
+  const right = 970;
+  const top = 18;
+  const bottom = 150;
+  const x = (index: number) => history.length < 2 ? width / 2 : left + (index / (history.length - 1)) * (right - left);
+  const y = (score: number) => bottom - (Math.max(0, Math.min(100, score)) / 100) * (bottom - top);
+  const line = history.map((point, index) => `${index ? "L" : "M"} ${x(index).toFixed(1)} ${y(point.score).toFixed(1)}`).join(" ");
+  const area = `${line} L ${right} ${bottom} L ${left} ${bottom} Z`;
+  const points = history.map((point, index) => `<circle class="history-point${point.month === currentMonth ? " is-current" : ""}" cx="${x(index).toFixed(1)}" cy="${y(point.score).toFixed(1)}" r="4"><title>${esc(point.label)}: ${point.score}/100</title></circle>`).join("");
+  const months = history.map((point) => {
+    const { month, year } = monthParts(point.label);
+    const selected = point.month === currentMonth;
+    return `<button class="history-bar${selected ? " is-selected" : ""}" type="button" data-month="${esc(point.month)}" aria-label="${esc(point.label)}, score ${point.score}" aria-pressed="${selected}"><span class="bar-value">${point.score}</span><span class="bar-month">${esc(month)}</span><span class="bar-year">${esc(year)}</span></button>`;
+  }).join("");
+  return `<div class="history-plot" role="img" aria-label="Monthly GAP score trend from 0 to 100. The dashed line marks editorial parity at 50.">
+    <div class="plot-axis-labels"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+    <svg class="history-line-chart" viewBox="0 0 1000 170" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="gap-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#c9a47a" stop-opacity=".20"/><stop offset="100%" stop-color="#c9a47a" stop-opacity="0"/></linearGradient></defs>
+      <path class="plot-gridline" d="M30 18H970 M30 84H970 M30 150H970"/>
+      <path class="plot-parity" d="M30 ${y(50).toFixed(1)}H970"/>
+      <path class="plot-area" d="${area}"/>
+      <path class="plot-line" d="${line}"/>
+      ${points}
+    </svg>
+  </div><div class="history-chart-months">${months}</div>`;
 }
 
 export function renderTimeline(): string {
