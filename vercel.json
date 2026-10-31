@@ -5,7 +5,7 @@
   "buildCommand": "echo 'no build step'",
   "functions": {
     "server.ts": {
-      "includeFiles": "{data/**,public/**,src/**}"
+      "includeFiles": "{public/**,src/**,templates/**}"
     }
   }
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { renderHome } from "../src/render";
 import { currentProviderScore, currentScore, providers, scoreProvider } from "../src/data";
 
-const template = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+const template = readFileSync(new URL("../templates/index.html", import.meta.url), "utf8");
 const page = renderHome(template, "https://example.test");
 const styles = readFileSync(new URL("../public/styles.css", import.meta.url), "utf8");
 

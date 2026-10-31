@@ -18,6 +18,7 @@ import { renderHome, renderProviderPage } from "./src/render";
 
 const PORT = Number(Bun.env.PORT ?? 3000);
 const PUBLIC_DIR = resolve(import.meta.dir, "public");
+const TEMPLATES_DIR = resolve(import.meta.dir, "templates");
 const isVercel = Boolean(process.env.VERCEL);
 const DB_PATH = Bun.env.DB_PATH
   ? resolve(import.meta.dir, Bun.env.DB_PATH)
@@ -58,7 +59,18 @@ let newsSource: "rss" | "fallback" = "fallback";
 let refreshInFlight: Promise<void> | null = null;
 const NEWS_TTL_MS = 15 * 60 * 1000;
 const MAX_NEWS = 8;
+const MAX_RATE_LIMIT_ENTRIES = 10_000;
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
+const pageRoutes: Record<string, string> = {
+  "/": "index.html",
+  "/index.html": "index.html",
+  "/about": "about.html",
+  "/about/": "about.html",
+  "/privacy": "privacy.html",
+  "/privacy/": "privacy.html",
+  "/unsubscribe": "unsubscribe.html",
+  "/unsubscribe/": "unsubscribe.html"
+};
 
 function siteOrigin(request: Request): string {
   return SITE_URL || new URL(request.url).origin;
@@ -93,6 +105,26 @@ function htmlHeaders(cache = "public, max-age=300"): HeadersInit {
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "content-security-policy": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'"
   };
+}
+
+async function renderTemplate(name: string, origin: string, request: Request): Promise<Response> {
+  let html = await Bun.file(resolve(TEMPLATES_DIR, name)).text();
+  if (name === "index.html") {
+    html = renderHome(html, origin);
+  } else {
+    html = html
+      .replaceAll("__SITE_URL__", htmlEscape(origin))
+      .replaceAll("__TODAY__", new Date().toISOString().slice(0, 10))
+      .replaceAll("__YEAR__", String(new Date().getUTCFullYear()))
+      .replaceAll("__LAST_REVIEWED__", methodology.lastReviewed)
+      .replaceAll("__UPDATED_DATE__", methodology.lastReviewed)
+      .replaceAll("__METHODOLOGY_VERSION__", methodology.version)
+      .replaceAll("__COVERAGE_CITED__", String(methodology.sourceCoverage.cited))
+      .replaceAll("__COVERAGE_TOTAL__", String(methodology.sourceCoverage.total))
+      .replaceAll("__INDEPENDENT_SOURCES__", String(providerSourceCoverage.independent))
+      .replaceAll("__PROVIDER_COUNT__", String(providers.length));
+  }
+  return new Response(request.method === "HEAD" ? null : html, { headers: htmlHeaders() });
 }
 
 function historyCsv(): string {
@@ -309,16 +341,22 @@ function notFound(): Response {
   return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
 
-function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || request.headers.get("x-real-ip") || request.headers.get("cf-connecting-ip") || "unknown";
+type ServerLike = { requestIP?(request: Request): { address?: string } | null };
+
+function clientIp(request: Request, server?: ServerLike): string {
+  const address = server?.requestIP?.(request)?.address;
+  return address || request.headers.get("cf-connecting-ip") || request.headers.get("x-real-ip") || "unknown";
 }
 
-function rateLimit(request: Request): boolean {
-  const ip = clientIp(request);
+function rateLimit(request: Request, server?: ServerLike): boolean {
+  const ip = clientIp(request, server);
   const now = Date.now();
   for (const [key, value] of rateLimits) {
     if (value.resetAt <= now) rateLimits.delete(key);
+  }
+  if (rateLimits.size >= MAX_RATE_LIMIT_ENTRIES) {
+    const oldest = rateLimits.keys().next().value;
+    if (oldest !== undefined) rateLimits.delete(oldest);
   }
   const current = rateLimits.get(ip);
   if (!current || current.resetAt <= now) {
@@ -329,8 +367,13 @@ function rateLimit(request: Request): boolean {
   return current.count > 5;
 }
 
-async function subscribe(request: Request): Promise<Response> {
-  if (rateLimit(request)) return json({ ok: false, message: "Too many attempts. Please try again in a few minutes." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 429);
+function isJsonRequest(request: Request): boolean {
+  return (request.headers.get("content-type") ?? "").trim().toLowerCase().startsWith("application/json");
+}
+
+async function subscribe(request: Request, server?: ServerLike): Promise<Response> {
+  if (!isJsonRequest(request)) return json({ ok: false, message: "Content-Type must be application/json." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 415);
+  if (rateLimit(request, server)) return json({ ok: false, message: "Too many attempts. Please try again in a few minutes." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 429);
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (contentLength > 8192) return json({ ok: false, message: "Request is too large." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 413);
   let body: { email?: string; consent?: boolean; company?: string };
@@ -377,8 +420,9 @@ async function subscribe(request: Request): Promise<Response> {
   }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
 }
 
-async function unsubscribe(request: Request): Promise<Response> {
-  if (rateLimit(request)) return json({ ok: false, message: "Too many attempts. Please try again in a few minutes." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 429);
+async function unsubscribe(request: Request, server?: ServerLike): Promise<Response> {
+  if (!isJsonRequest(request)) return json({ ok: false, message: "Content-Type must be application/json." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 415);
+  if (rateLimit(request, server)) return json({ ok: false, message: "Too many attempts. Please try again in a few minutes." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 429);
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (contentLength > 8192) return json({ ok: false, message: "Request is too large." }, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }, 413);
   let body: { email?: string; company?: string };
@@ -421,13 +465,22 @@ async function unsubscribe(request: Request): Promise<Response> {
 console.info(`GAP Index server starting on :${PORT}`);
 void refreshNews();
 
-async function handle(request: Request): Promise<Response> {
+async function handle(request: Request, server?: ServerLike): Promise<Response> {
     const url = new URL(request.url);
-    const pathname = decodeURIComponent(url.pathname);
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return notFound();
+    }
     const origin = siteOrigin(request);
 
     if (request.method === "GET" && pathname === "/healthz") {
       return json({ ok: true, service: "gap-index", score: currentScore, anthropicScore: currentProviderScore });
+    }
+
+    if ((request.method === "GET" || request.method === "HEAD") && pageRoutes[pathname]) {
+      return renderTemplate(pageRoutes[pathname]!, origin, request);
     }
 
     if (request.method === "GET" && pathname === "/api/index.json") {
@@ -545,6 +598,7 @@ async function handle(request: Request): Promise<Response> {
         const sources = point.sources.map((source) => '<li><a href="' + htmlEscape(source.url) + '" rel="noopener noreferrer">' + htmlEscape(source.title) + '</a><span>' + htmlEscape(source.publisher) + ' · ' + htmlEscape(source.date) + '</span></li>').join("");
         const nav = (previous ? '<a href="' + origin + '/history/' + previous.month + '/" rel="prev">← ' + htmlEscape(previous.label) + '</a>' : '<span></span>') +
           (next ? '<a href="' + origin + '/history/' + next.month + '/" rel="next">' + htmlEscape(next.label) + ' →</a>' : '<a href="' + origin + '/" rel="up">Current index →</a>');
+        const weightSentence = methodology.factors.map((factor) => `${factor.label} (${factor.weight}%)`).join(", ");
         const structured = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Article",
@@ -578,7 +632,7 @@ async function handle(request: Request): Promise<Response> {
           '<h2>Anthropic / Claude signal</h2><div class="archive-signal"><h3>Product and ecosystem evidence</h3><p>' + htmlEscape(point.anthropicSignal) + '</p></div>',
           '<h2>OpenAI / ChatGPT counterweight</h2><div class="archive-signal"><h3>Comparative context</h3><p>' + htmlEscape(point.openaiSignal) + '</p></div>',
           '<h2>Primary sources and further reading</h2><ul class="archive-sources">' + sources + '</ul>',
-          '<h2>How to interpret this score</h2><p class="archive-subtitle">The GAP Index is a directional editorial assessment based on subscription value and usage limits (30%), model capability and reliability (30%), coding and agent workflows (25%), and ecosystem and distribution (15%). A reading above 50 tilts toward Anthropic; below 50 tilts toward OpenAI. The series is a retrospective reconstruction, not a representative audience sentiment poll, audited market-share metric, or guarantee of subscription value. See the <a href="/#methodology">full methodology</a>.</p>',
+          '<h2>How to interpret this score</h2><p class="archive-subtitle">The GAP Index is a directional editorial assessment based on ' + weightSentence + '. A reading above 50 tilts toward Anthropic; below 50 tilts toward OpenAI. The series is a retrospective reconstruction, not a representative audience sentiment poll, audited market-share metric, or guarantee of subscription value. See the <a href="/#methodology">full methodology</a>.</p>',
           '<nav class="archive-nav" aria-label="Monthly archive navigation">' + nav + '</nav></main>',
           '<footer class="site-footer"><div class="footer-bottom"><span>GAP Index · Independent editorial project.</span><span>Not affiliated with Anthropic or OpenAI.</span><a href="/">Current index ↑</a></div></footer></div></body></html>'
         ];
@@ -586,21 +640,20 @@ async function handle(request: Request): Promise<Response> {
       }
     }
 
-    if (request.method === "POST" && pathname === "/api/unsubscribe") return unsubscribe(request);
-    if (request.method === "POST" && pathname === "/api/subscribe") return subscribe(request);
+    if (request.method === "POST" && pathname === "/api/unsubscribe") return unsubscribe(request, server);
+    if (request.method === "POST" && pathname === "/api/subscribe") return subscribe(request, server);
 
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD, POST" } });
 
-    const relativePath = pathname === "/" ? "index.html" : pathname.endsWith("/") ? pathname.slice(1) + "index.html" : pathname.replace(/^\/+/, "");
+    const relativePath = pathname.endsWith("/") ? pathname.slice(1) + "index.html" : pathname.replace(/^\/+/, "");
     const filepath = resolve(PUBLIC_DIR, relativePath);
-    if (!filepath.startsWith(PUBLIC_DIR + "/") && filepath !== resolve(PUBLIC_DIR, "index.html")) return notFound();
+    if (!filepath.startsWith(PUBLIC_DIR + "/")) return notFound();
     const file = Bun.file(filepath);
     if (!(await file.exists())) return notFound();
 
     const headers = new Headers();
     const extension = extname(filepath).toLowerCase();
     const contentTypes: Record<string, string> = {
-      ".html": "text/html; charset=utf-8",
       ".css": "text/css; charset=utf-8",
       ".js": "text/javascript; charset=utf-8",
       ".svg": "image/svg+xml",
@@ -612,29 +665,8 @@ async function handle(request: Request): Promise<Response> {
     headers.set("x-content-type-options", "nosniff");
     headers.set("referrer-policy", "strict-origin-when-cross-origin");
     headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
-    if (extension === ".html") {
-      headers.set("cache-control", "no-cache");
-      headers.set("content-security-policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'");
-      let html = await file.text();
-      if (relativePath === "index.html") {
-        html = renderHome(html, origin);
-      } else {
-        html = html
-          .replaceAll("__SITE_URL__", htmlEscape(origin))
-          .replaceAll("__TODAY__", new Date().toISOString().slice(0, 10))
-          .replaceAll("__YEAR__", String(new Date().getUTCFullYear()))
-          .replaceAll("__LAST_REVIEWED__", methodology.lastReviewed)
-          .replaceAll("__UPDATED_DATE__", methodology.lastReviewed)
-          .replaceAll("__METHODOLOGY_VERSION__", methodology.version)
-          .replaceAll("__COVERAGE_CITED__", String(methodology.sourceCoverage.cited))
-          .replaceAll("__COVERAGE_TOTAL__", String(methodology.sourceCoverage.total))
-          .replaceAll("__INDEPENDENT_SOURCES__", String(providerSourceCoverage.independent))
-          .replaceAll("__PROVIDER_COUNT__", String(providers.length));
-      }
-      return new Response(request.method === "HEAD" ? null : html, { headers });
-    }
     headers.set("cache-control", extension === ".svg" ? "public, max-age=86400" : "public, max-age=3600, stale-while-revalidate=86400");
     return new Response(request.method === "HEAD" ? null : file, { headers });
   }
 
-export default { fetch: handle };
+export default { fetch: handle, maxRequestBodySize: 16 * 1024 };
