@@ -7,7 +7,7 @@ Google, Microsoft, Meta, Amazon, OpenAI, Anthropic, Mistral AI, xAI, DeepSeek, a
 
 ## Principles
 - The first viewport is server-rendered HTML: the Anthropic gauge, the ten-provider field, and the latest curated stories remain visible without JavaScript.
-- Provider scores are absolute editorial attractiveness (0 = weak, 50 = mid-field, 100 = leading). The GAP vs. OpenAI is a separate relative scale (50 = parity).
+- Provider scores are absolute editorial attractiveness (0 = weak, 50 = mid-field, 80–100 = category leader). The GAP vs. OpenAI is a separate relative scale (50 = parity).
 - Monthly history is a **retrospective editorial assessment**, not survey data, a live market-share statistic, or investment advice. Each entry links to a primary source where available.
 - "Source coverage" describes whether editorial entries have citations. It is not a claim that every statement is 100% accurate.
 - Every provider has at least one primary source and at least one independent source.
@@ -27,7 +27,9 @@ Open http://localhost:3000.
 bun run start
 ```
 
-Set `SITE_URL` to the canonical public URL. The process serves the static-first site and JSON/Markdown endpoints. SQLite stores newsletter signups in `data/gap-index.sqlite`; use a persistent volume in production. Without a configured mailing provider, addresses are stored locally only and no newsletter email is sent. The UI explains this and includes a working unsubscribe route. Read `/privacy/` and see `.env.example`.
+Set `SITE_URL` to the canonical public URL. The process renders HTML from `templates/` (tokens like `__SITE_URL__` are replaced server-side) and serves static assets from `public/`; SQLite stores newsletter signups in `data/gap-index.sqlite`; use a persistent volume in production. `data/` is not shipped to Vercel. Without a configured mailing provider, addresses are stored locally only and no newsletter email is sent. The UI explains this and includes a working unsubscribe route. Read `/privacy/` and see `.env.example`.
+
+`POST /api/subscribe` and `POST /api/unsubscribe` require `Content-Type: application/json` (otherwise 415) and a body under 16 KB.
 
 ## Endpoints
 - `/` — server-rendered homepage (Anthropic gauge, ten-provider field, GAP history)
@@ -39,6 +41,7 @@ Set `SITE_URL` to the canonical public URL. The process serves the static-first 
 - `/api/history.csv` — flat monthly history export
 - `/feed.xml` — RSS feed of monthly GAP updates
 - `/api/news.json` — recent AI headlines (cached RSS refresh with curated fallback)
+- `POST /api/subscribe` and `POST /api/unsubscribe` — JSON-only newsletter endpoints (`Content-Type: application/json`, max 16 KB)
 - `/api/overview.md` — concise Markdown summary
 - `/llms.txt` — agent-facing site map and usage notes
 - `/llms-full.txt` — expanded methodology, provider breakdowns, and history
