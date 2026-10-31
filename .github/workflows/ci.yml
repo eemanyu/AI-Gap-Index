@@ -43,7 +43,16 @@ jobs:
           curl --fail --silent http://127.0.0.1:3199/api/history.csv | grep -q 'month,label,score'
           curl --fail --silent http://127.0.0.1:3199/feed.xml | grep -q '<rss'
           curl --fail --silent http://127.0.0.1:3199/sitemap.xml | grep -q 'providers/anthropic/'
-          curl --fail --silent http://127.0.0.1:3199/api/index.json | grep -q '"score": 52'
+          curl --fail --silent http://127.0.0.1:3199/api/index.json | grep -q '"providers"'
+          for page in / /about/ /privacy/ /unsubscribe/; do
+            body="$(curl --fail --silent "http://127.0.0.1:3199${page}")"
+            if grep -qE '__[A-Z_]+__' <<<"$body"; then
+              echo "Unrendered template token found on ${page}"
+              exit 1
+            fi
+          done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST http://127.0.0.1:3199/api/subscribe -H 'content-type: text/plain' -d '{"email":"ci@example.test","consent":true}')" = "415"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' 'http://127.0.0.1:3199/api/%')" = "404"
           curl --fail --silent http://127.0.0.1:3199/api/history.json | grep -q '2025-12'
           curl --fail --silent http://127.0.0.1:3199/history/2025-12/ | grep -q 'Claude Code momentum'
           curl --fail --silent http://127.0.0.1:3199/llms.txt | grep -q '/history/2026-10/'
