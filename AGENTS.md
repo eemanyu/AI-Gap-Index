@@ -19,17 +19,23 @@ bun run dev      # bun --watch server.ts (http://localhost:3000)
 bun run start    # production
 bun test         # bun test
 bun build server.ts --target=bun --outfile=/tmp/gap-index-server.js
+npx wrangler dev --port 8787   # Cloudflare Worker (after local D1 migrations)
 ```
 
 ## Structure
 
 ```
-server.ts          # routes, RSS, SQLite, monthly page rendering
+server.ts          # Bun entry: routes, RSS, SQLite, static assets
+worker.ts          # Cloudflare Workers entry: routes, D1, assets, signal ingest
 src/data.ts        # history[], methodology, fallbackNews, currentScore
+src/content.ts     # pure response builders shared by both entries
+src/live.ts        # effective-score math and signal state types
 src/render.ts      # server-side HTML rendering (home, provider pages)
 templates/         # index.html, about.html, privacy.html, unsubscribe.html
 public/            # styles.css, app.js, svgs (static assets only)
-test/              # data.test.ts, gauge.test.ts, server.test.ts
+migrations/        # D1 schema (0001_init.sql)
+test/              # data.test.ts, gauge.test.ts, server.test.ts, live.test.ts
+wrangler.jsonc     # Cloudflare Workers + D1 + assets config
 .github/workflows/ # CI (tests + build + HTTP smoke)
 ```
 
@@ -37,13 +43,16 @@ test/              # data.test.ts, gauge.test.ts, server.test.ts
 
 ## Architecture
 
-- Bun runtime (>=1.2), TypeScript ESM.
-- Single server in `server.ts` (Bun.serve). First viewport is server-rendered (gauge, current reading, latest news without JS).
+- **Cloudflare Workers is the production deployment** (`worker.ts`, `wrangler.jsonc`): Workers Assets serve `public/`, D1 stores newsletter signups and live signals, and HTML templates are imported as text modules via the Wrangler `rules` entry.
+- The Bun server (`server.ts`) remains for local development and as the Vercel fallback. Both entries share pure builders in `src/content.ts`; news caching stays runtime-specific.
+- First viewport is server-rendered (gauge, current reading, latest news without JS).
 - HTML pages are rendered from `templates/`; `public/` only holds static assets (CSS, JS, SVGs). Static serving never leaves `public/`.
-- `POST /api/subscribe` and `/api/unsubscribe` require a `Content-Type` starting with `application/json` (415 otherwise) to block simple cross-site form posts. Request bodies are capped at 16 KB.
-- Persistence in SQLite (`bun:sqlite`), path via `DB_PATH`. Use a persistent volume in production.
+- `POST /api/subscribe` and `/api/unsubscribe` require a `Content-Type` starting with `application/json` (415 otherwise) to block simple cross-site form posts. Bodies are capped at 8 KB on Workers and 16 KB on Bun.
+- Newsletter rate limiting is an in-memory Map per Worker isolate (10k cap, keyed by `cf-connecting-ip`); it resets on deploy/cold start.
+- D1 schema lives in `migrations/0001_init.sql` (`subscribers`, `provider_signals`, `provider_state`, `seen_posts`). Apply with `wrangler d1 migrations apply ai-gap-index --remote` (or `--local` for dev).
+- Live provider score: `clamp(round(base + tweetDelta + newsDelta + blogDelta), 0, 100)`. The historical GAP series and `/api/history.*` never change with signals.
 - News cache: 15-min TTL, max 8 items, background refresh (does not block responses).
-- Vercel deploy (`vercel.json`, bun framework); on Vercel the DB lands in `/tmp/gap-index.sqlite` (ephemeral). Only `public/**`, `src/**`, and `templates/**` are bundled into the function; `data/**` is never shipped.
+- Vercel fallback (`vercel.json`, bun framework): SQLite lands in `/tmp/gap-index.sqlite` (ephemeral). Only `public/**`, `src/**`, and `templates/**` are bundled into the function; `data/**` is never shipped.
 
 ## Editorial data model (src/data.ts)
 
@@ -57,23 +66,38 @@ test/              # data.test.ts, gauge.test.ts, server.test.ts
 
 | Var | Purpose |
 |---|---|
-| `SITE_URL` | Canonical origin (SEO, sitemap, llms.txt). |
-| `PORT` | Server port (default 3000). |
-| `DB_PATH` | SQLite path (default ./data/gap-index.sqlite). |
+| `SITE_URL` | Canonical origin (SEO, sitemap, llms.txt). Worker uses `request.url` origin when unset. |
+| `PORT` | Bun server port (default 3000). |
+| `DB_PATH` | Bun SQLite path (default ./data/gap-index.sqlite). |
 | `RESEND_API_KEY` | Optional — newsletter delivery. |
 | `RESEND_AUDIENCE_ID` | Optional — Resend audience. |
+| `INGEST_TOKEN` | Worker secret; required by `POST /api/signals`. |
+| `DB` | Worker D1 binding (configured in `wrangler.jsonc`). |
+| `ASSETS` | Worker Assets binding (configured in `wrangler.jsonc`). |
 
-Without Resend, signups are stored locally only and no email is sent.
+Without Resend, signups are stored in SQLite/D1 only and no email is sent.
 
 ## Development workflow
 
-- `bun test` must pass before a PR (data.test.ts, gauge.test.ts, server.test.ts).
+- `bun test` must pass before a PR (data.test.ts, gauge.test.ts, server.test.ts, live.test.ts).
 - CI runs tests + build + HTTP smoke (routes, subscribe/unsubscribe, template-token and content-type guards). Keep `/healthz` returning `{ ok: true }`.
 - Route changes must be validated manually (curl) per the CI smoke test.
 
 ## Deploy
 
-- Vercel: `vercel.json` with bun framework. SQLite in `/tmp` is ephemeral — use a persistent volume in production. Only `public/**`, `src/**`, and `templates/**` are bundled; `data/**` (sqlite/PII) is not shipped.
+- **Cloudflare Workers (production):**
+  ```sh
+  npx wrangler d1 create ai-gap-index   # first time; copy database_id into wrangler.jsonc
+  npx wrangler d1 migrations apply ai-gap-index --remote
+  npx wrangler deploy
+  printf '%s' "$(openssl rand -hex 32)" | npx wrangler secret put INGEST_TOKEN
+  ```
+  The deploy token needs Workers Scripts:Edit and D1:Edit. Set `SITE_URL` as a Worker variable if the canonical origin differs from the workers.dev URL.
+- **Ingest token file:** `/home/ubuntu/.config/ai-gap-index/ingest.env` (mode 600, outside the repo) holds `INGEST_URL`, `STATE_URL`, and `INGEST_TOKEN` for the VPS cron scripts. Never commit or print the token.
+- **Signal jobs:** scripts/grok-daily.ts scores all ten providers once daily; scripts/blog-watcher.ts polls official-source RSS searches every 15 minutes and deduplicates through D1 plus a mode-600 cache outside the repo. Cron serializes both with flock and logs through logger.
+- **Local Worker:** `npx wrangler d1 migrations apply ai-gap-index --local`, then `npx wrangler dev --port 8787`. Put local secrets in `.dev.vars` (gitignored).
+- **Signal API:** `POST /api/signals` with `Authorization: Bearer $INGEST_TOKEN`, JSON body `{ providerId, source: "tweets"|"news"|"blog", delta: -5..5, summary?, items?, dedupe? }`. The delta replaces that source's value in `provider_state`; `dedupe: true` records URLs in `seen_posts` and skips a fully-seen batch. `GET /api/state.json` exposes base/effective scores for all providers; `GET /api/signals.json?providerId=&limit=` lists recent rows.
+- **Vercel fallback:** `vercel.json` with bun framework. SQLite in `/tmp` is ephemeral — use a persistent volume in production. Only `public/**`, `src/**`, and `templates/**` are bundled; `data/**` (sqlite/PII) is not shipped.
 - Set `SITE_URL` to the canonical public URL.
 - Without a configured mailing provider, addresses stay local; the UI explains this.
 
@@ -87,7 +111,8 @@ Without Resend, signups are stored locally only and no email is sent.
 
 ## Do not
 
-- Commit `.env`, `data/`, `node_modules/`, `.vercel/`.
+- Commit `.env`, `.dev.vars`, `.wrangler/`, `data/`, `node_modules/`, `.vercel/`.
+- Commit or print `INGEST_TOKEN`, Cloudflare tokens, or the contents of `/home/ubuntu/.config/ai-gap-index/ingest.env`.
 - Edit `index-backup.html` (legacy backup).
 - Change gauge orientation/colors (Anthropic on the left orange #d97757; OpenAI on the right black #171912) — tests enforce this.
 - Add telemetry/outbound calls without an opt-in gate.

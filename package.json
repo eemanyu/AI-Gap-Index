@@ -6,9 +6,14 @@
   "scripts": {
     "dev": "bun --watch server.ts",
     "start": "bun server.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "score:daily": "bun --no-env-file scripts/grok-daily.ts",
+    "watch:blogs": "bun --no-env-file scripts/blog-watcher.ts"
   },
   "engines": {
     "bun": ">=1.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
   }
 }

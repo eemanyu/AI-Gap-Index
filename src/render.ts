@@ -75,10 +75,10 @@ function smallGauge(provider: Provider, score: number): string {
   </svg>`;
 }
 
-export function renderProviderRows(): string {
+export function renderProviderRows(scores: Record<string, number> = {}): string {
   return providers
     .map((provider) => {
-      const score = scoreProvider(provider);
+      const score = scores[provider.id] ?? scoreProvider(provider);
       return `<a class="provider-row" href="${esc(providerPath(provider.id))}" data-provider="${esc(provider.id)}" aria-label="${esc(provider.name)}: ${score} out of 100, ${esc(scoreLabel(score))}">
         <span class="provider-gauge" aria-hidden="true">${smallGauge(provider, score)}</span>
         <span class="provider-name">${esc(provider.name)}<small>${esc(provider.shortName)}</small></span>
@@ -150,8 +150,7 @@ function siteFooter(): string {
   return `<footer class="site-footer"><div class="footer-bottom"><span>GAP Index · Independent editorial project.</span><span>Not affiliated with Anthropic or OpenAI.</span><a href="/about/">About &amp; corrections</a></div></footer>`;
 }
 
-export function renderProviderPage(provider: Provider, origin: string): string {
-  const score = scoreProvider(provider);
+export function renderProviderPage(provider: Provider, origin: string, score: number = scoreProvider(provider)): string {
   const url = `${origin}${providerPath(provider.id)}`;
   const factors = methodology.factors
     .map((factor) => {
@@ -196,8 +195,9 @@ export function renderProviderPage(provider: Provider, origin: string): string {
     </main>${siteFooter()}</div></body></html>`;
 }
 
-export function renderHome(template: string, origin: string): string {
+export function renderHome(template: string, origin: string, scores: Record<string, number> = {}): string {
   const currentMonth = history.at(-1)!;
+  const mainScore = scores[currentProvider.id] ?? currentProviderScore;
   const delta = currentScoreDelta;
   const deltaIcon = delta > 0 ? "↗" : delta < 0 ? "↘" : "→";
   const deltaText = `${delta > 0 ? "+" : ""}${delta}`;
@@ -208,13 +208,13 @@ export function renderHome(template: string, origin: string): string {
     __UPDATED_DATE__: longDate(methodology.lastReviewed),
     __LAST_REVIEWED__: methodology.lastReviewed,
     __METHODOLOGY_VERSION__: methodology.version,
-    __MAIN_SCORE__: String(currentProviderScore),
+    __MAIN_SCORE__: String(mainScore),
     __MAIN_NAME__: currentProvider.name,
     __MAIN_SHORT__: currentProvider.shortName,
     __MAIN_HEADLINE__: currentProvider.headline,
     __MAIN_SUMMARY__: currentProvider.summary,
-    __MAIN_STATUS__: scoreLabel(currentProviderScore),
-    __MAIN_NEEDLE__: (currentProviderScore * 1.8 - 180).toFixed(1),
+    __MAIN_STATUS__: scoreLabel(mainScore),
+    __MAIN_NEEDLE__: (mainScore * 1.8 - 180).toFixed(1),
     __GAP_SCORE__: String(currentScore),
     __GAP_DELTA__: deltaText,
     __GAP_DELTA_ICON__: deltaIcon,
@@ -225,7 +225,7 @@ export function renderHome(template: string, origin: string): string {
     __LATEST_MONTH__: currentMonth.label,
     __PROVIDER_COUNT__: String(providers.length),
     __INDEPENDENT_SOURCES__: String(providerSourceCoverage.independent),
-    __PROVIDER_ROWS__: renderProviderRows(),
+    __PROVIDER_ROWS__: renderProviderRows(scores),
     __HISTORY_BARS__: renderHistoryBars(),
     __SELECTED_MONTH__: renderSelectedMonth(),
     __TIMELINE__: renderTimeline(),
